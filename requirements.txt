@@ -1,7 +1,9 @@
 streamlit
 python-docx
 spacy
+en-core-web-sm
 pdfplumber
 fuzzywuzzy
 fpdf
 python-Levenshtein
+
