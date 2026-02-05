@@ -1,0 +1,6 @@
+streamlit
+python-docx
+pdfplumber
+fuzzywuzzy
+fpdf
+python-Levenshtein
