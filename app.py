@@ -69,7 +69,20 @@ for pkg in ["punkt", "punkt_tab"]:
 
 # Initialize SpaCy
 try:
-    nlp = spacy.load("en_core_web_sm")
+    @st.cache_resource
+def load_spacy_model():
+    try:
+        return spacy.load("en_core_web_sm")
+    except OSError:
+        import subprocess
+        subprocess.run(
+            ["python", "-m", "spacy", "download", "en_core_web_sm"],
+            check=True
+        )
+        return spacy.load("en_core_web_sm")
+
+nlp = load_spacy_model()
+
 except:
     import os
     os.system("python -m spacy download en_core_web_sm")
@@ -370,4 +383,5 @@ if st.session_state.get("analyzed", False):
     with col1:
         st.download_button("📥 Corrected Resume (.docx)", data=st.session_state["highlighted_bytes"], file_name="Corrected_Resume.docx")
     with col2:
+
         st.download_button("📄 Summary Report (.pdf)", data=st.session_state["summary_pdf"], file_name="Summary_Report.pdf")
