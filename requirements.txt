@@ -1,9 +1,11 @@
 streamlit
 python-docx
 spacy
+nltk
 pdfplumber
 fuzzywuzzy
 fpdf
 python-Levenshtein
+
 
 
