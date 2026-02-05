@@ -1,5 +1,6 @@
 streamlit
 python-docx
+spacy
 pdfplumber
 fuzzywuzzy
 fpdf
