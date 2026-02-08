@@ -56,15 +56,15 @@ for pkg in ["punkt", "punkt_tab"]:
 try:
     @st.cache_resource
     def load_spacy_model():
-    try:
-        return spacy.load("en_core_web_sm")
-    except OSError:
-        import subprocess
-        subprocess.run(
-            ["python", "-m", "spacy", "download", "en_core_web_sm"],
-            check=True
-        )
-        return spacy.load("en_core_web_sm")
+        try:
+            return spacy.load("en_core_web_sm")
+        except OSError:
+            import subprocess
+            subprocess.run(
+                ["python", "-m", "spacy", "download", "en_core_web_sm"],
+                check=True
+            )
+            return spacy.load("en_core_web_sm")
 
 nlp = load_spacy_model()
 
