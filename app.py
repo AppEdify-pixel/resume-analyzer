@@ -10,6 +10,8 @@ from nltk.tokenize import sent_tokenize
 import unicodedata
 from datetime import datetime
 from collections import Counter
+import pdfplumber
+from fuzzywuzzy import fuzz
 
 # 🔹 Minimal tech alias normalization (DO NOT expand arbitrarily)
 TECH_ALIASES = {
@@ -40,21 +42,6 @@ def alias_match_in_text(text, keyword):
 
 # added lastly on Feb 03 2026
 def highlight_dot_tech_token(para, text, keywords):
-    """
-    Highlights full dot-based tech tokens like ASP.NET or .NET
-    as a single unit to avoid partial highlighting.
-    """
-    for kw in keywords:
-        if "." in kw:
-            if re.search(rf"(?<!\w){re.escape(kw)}(?!\w)", text, re.IGNORECASE):
-            # 🔹 CLEAR ALL EXISTING RUNS FIRST added lastly on Feb 04 2026
-               while para.runs:
-                para._element.remove(para.runs[0]._element)
-
-                run = para.add_run(text)
-                run.bold = True
-                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
-                return True
     return False
 
 
@@ -71,17 +58,17 @@ for pkg in ["punkt", "punkt_tab"]:
 try:
     @st.cache_resource
     def load_spacy_model():
-    try:
-        return spacy.load("en_core_web_sm")
-    except OSError:
-        import subprocess
-        subprocess.run(
-            ["python", "-m", "spacy", "download", "en_core_web_sm"],
-            check=True
-        )
-        return spacy.load("en_core_web_sm")
+        try:
+            return spacy.load("en_core_web_sm")
+        except OSError:
+            import subprocess
+            subprocess.run(
+                ["python", "-m", "spacy", "download", "en_core_web_sm"],
+                check=True
+            )
+            return spacy.load("en_core_web_sm")
 
-nlp = load_spacy_model()
+    nlp = load_spacy_model()
 
 except:
     import os
@@ -134,7 +121,7 @@ def clean_jd_text(text):
 def get_proper_case(word):
     """Handles consistent casing for both the Resume and PDF Summary."""
     canonical = {
-        "sql": "SQL", "m365": "M365", "api": "API", "aws": "AWS", 
+        "sql": "SQL", "m365": "M365", "api": "API", "aws": "AWS",
         "ci/cd": "CI/CD", "c#": "C#", ".net": ".NET", "mvc": "MVC",
         "id": "ID", "ad": "AD", "bi": "BI"
     }
@@ -151,21 +138,21 @@ def extract_keywords(text):
     if not text: return []
     doc = nlp(text)
     potential_keywords = set()
-    
+
     # "Security Guard" list to block non-tech header words
     exclusion_list = {
-        "candidate", "requirement", "requirements", "position", "positions", "skills", 
+        "candidate", "requirement", "requirements", "position", "positions", "skills",
         "additional", "summary", "experience", "qualifications", "objective", "profile",
-        "education", "responsibilities", "deliverables", "management", "project", 
+        "education", "responsibilities", "deliverables", "management", "project",
         "business", "delivery", "client", "tools", "solutions", "system", "systems",
         "information", "description", "details", "contact", "level", "years", "minimum",
         "preferred", "standard", "procedures", "process", "various", "multiple",
         "mandatory", "technical", "tasks", "skills/qualification", "responsibilities",
-        "suite", "related", "organizational","the", "based", "related", 
+        "suite", "related", "organizational","the", "based", "related",
         "entire", "various", "use", "including"
     }
 
-    clean_pattern = r"[^\w\s\-\#\+]"
+    clean_pattern = r"[^\w\s\-#\+]"
 
     # A. Noun Chunks (Phrases)
     for chunk in doc.noun_chunks:
@@ -182,7 +169,7 @@ def extract_keywords(text):
         is_acronym = token.text.isupper() and len(text_clean) > 1
         is_special_tech = text_clean.lower() in ['c#', 'c++', '.net']
         is_proper_name = token.pos_ == "PROPN" and len(text_clean) > 2
-        
+
         if (is_acronym or is_special_tech or is_proper_name):
             if text_clean.lower() not in exclusion_list:
                 potential_keywords.add(text_clean.lower())
@@ -196,24 +183,24 @@ def highlight_and_capitalize_docx(doc, keywords):
     lower_keywords = [k.lower() for k in keywords]
     # Use (?!\w) instead of \b to correctly identify C# and .NET
     pattern = r'(\b' + r'(?!\w)|\b'.join([re.escape(k) for k in lower_keywords]) + r'(?!\w))'
-    
+
     fix_count = 0
     cap_changes = []
 
-    for para in iter_all_paragraphs(doc): 
-        original_text = para.text 
+    for para in iter_all_paragraphs(doc):
+        original_text = para.text
         if not original_text.strip(): continue
-        
+
         # 🔹 FIX: handle ASP.NET / .NET as a single token
         if highlight_dot_tech_token(para, original_text, lower_keywords):
             # while len(para.runs) > 1:
             #    para._element.remove(para.runs[0]._element)
             continue
-            
+
         parts = re.split(pattern, original_text, flags=re.IGNORECASE)
         while len(para.runs) > 0:
             para._element.remove(para.runs[0]._element)
-        
+
         for part in parts:
             if not part: continue
             new_run = para.add_run(part)
@@ -225,7 +212,7 @@ def highlight_and_capitalize_docx(doc, keywords):
                 if part != proper_case:
                     cap_changes.append((part, proper_case))
                     fix_count += 1
-    
+
     buffer = BytesIO()
     doc.save(buffer)
     return buffer.getvalue(), fix_count, cap_changes
@@ -254,7 +241,7 @@ def generate_summary_pdf(found, missing, cap_fixes, capitalization_changes):
         pdf.multi_cell(0, 5, f"- {normalize_text_for_pdf(word)}: {count} time{'s' if count > 1 else ''}", 0, 1)
 
     pdf.ln(8)
-    
+
     # Matched Keywords
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 8, f"Matched Keywords ({len(found)}):", ln=True)
@@ -262,7 +249,7 @@ def generate_summary_pdf(found, missing, cap_fixes, capitalization_changes):
     pdf.multi_cell(0, 5, ", ".join([f"[OK] {get_proper_case(f)}" for f in found]), 0, 1)
 
     pdf.ln(5)
-    
+
     # Missing Keywords
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 8, f"Missing Keywords ({len(missing)}):", ln=True)
@@ -289,16 +276,16 @@ if req_file and res_file and st.button("🔍 Analyze Resume"):
             return " ".join(p.text for p in d.paragraphs)
 
         def extract_text_from_pdf(file):
-            from PyPDF2 import PdfReader
-            reader = PdfReader(file)
-            return " ".join(page.extract_text() or "" for page in reader.pages)
+            # Updated to use pdfplumber for better text extraction
+            with pdfplumber.open(file) as pdf:
+                return " ".join(page.extract_text() or "" for page in pdf.pages)
 
         # 1. Extract and Clean Requirement Text
         if req_file.name.endswith(".pdf"):
             req_text = extract_text_from_pdf(req_file)
         else:
             req_text = extract_text_from_docx(req_file)
-        
+
         req_text = clean_jd_text(req_text) # Fix "glued" words
 
         # 2. Extract Keywords
@@ -307,10 +294,10 @@ if req_file and res_file and st.button("🔍 Analyze Resume"):
         # 3. Process Resume
         resume_doc = Document(res_file)
         highlighted_bytes, cap_fixes, capitalization_changes = highlight_and_capitalize_docx(resume_doc, keywords)
-        
+
         # Get flattened resume text for "Found" check
         resume_text = " ".join(p.text for p in iter_all_paragraphs(Document(res_file)))
-        
+
         def phrase_components_present(phrase, resume_text):
             """
             Returns True if ALL meaningful components of a phrase
@@ -323,26 +310,26 @@ if req_file and res_file and st.button("🔍 Analyze Resume"):
                 "solution", "solutions", "platform", "platforms",
                 "enhancement", "enhancements"
             }
-        
+
             components = [
                 w for w in re.findall(r"[A-Za-z0-9]+", phrase.lower())
                 if w not in weak_words
             ]
-        
+
             return all(
                 re.search(rf"\b{re.escape(c)}\b", resume_text, re.IGNORECASE)
                 or normalize_with_aliases(c) in normalize_with_aliases(resume_text)
                 for c in components
             )
 
-        
-        
+
+
         found = []
         missing = []
-        
+
         normalized_resume_text = normalize_with_aliases(resume_text)
-        
-        
+
+
         for k in keywords:
             normalized_k = normalize_with_aliases(k)
             if phrase_components_present(normalized_k, normalized_resume_text):
@@ -385,4 +372,3 @@ if st.session_state.get("analyzed", False):
     with col2:
 
         st.download_button("📄 Summary Report (.pdf)", data=st.session_state["summary_pdf"], file_name="Summary_Report.pdf")
-
